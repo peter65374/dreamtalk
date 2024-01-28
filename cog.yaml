@@ -25,4 +25,5 @@ build:
     - av==11.0.0
   run:
     - pip install dlib
+    # - python -m download_script.py
 predict: "predict.py:Predictor"

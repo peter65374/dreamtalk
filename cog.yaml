@@ -12,7 +12,7 @@ build:
     - torch==2.0.1
     - torchvision==0.15.2
     - torchaudio==2.0.2
-    - transformers==4.28.1
+    - transformers # ==4.28.1
     - yacs==0.1.8
     - scipy==1.11.4
     - scikit-image==0.19.3
@@ -25,5 +25,5 @@ build:
     - av==11.0.0
   run:
     - pip install dlib
-    # - python -m download_script.py
+    # - python -m 'script/download_weight'
 predict: "predict.py:Predictor"

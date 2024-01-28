@@ -1,12 +1,15 @@
 # Prediction interface for Cog ⚙️
 # https://github.com/replicate/cog/blob/main/docs/python.md
-
 import os
-import subprocess
-import shutil
+# import subprocess
+# import shutil
+import tempfile
+
 import numpy as np
 import torch
-import torchaudio
+# import torchaudio
+from pydub import AudioSegment
+import cv2
 from scipy.io import loadmat
 from transformers import Wav2Vec2Processor
 from transformers.models.wav2vec2.modeling_wav2vec2 import Wav2Vec2Model
@@ -40,13 +43,15 @@ class Predictor(BasePredictor):
         self.device = torch.device("cuda:0")
         # get wav2vec feat from audio
         self.wav2vec_processor = Wav2Vec2Processor.from_pretrained(
-            "jonatasgrosman/wav2vec2-large-xlsr-53-english",
+            # "jonatasgrosman/wav2vec2-large-xlsr-53-english",
+            "jonatasgrosman/wav2vec2-large-xlsr-53-chinese-zh-cn",
             cache_dir=cache_dir,
             local_files_only=local_files_only,
         )
         self.wav2vec_model = (
             Wav2Vec2Model.from_pretrained(
-                "jonatasgrosman/wav2vec2-large-xlsr-53-english",
+                # "jonatasgrosman/wav2vec2-large-xlsr-53-english",
+                "jonatasgrosman/wav2vec2-large-xlsr-53-chinese-zh-cn",
                 cache_dir=cache_dir,
                 local_files_only=local_files_only,
             )
@@ -65,7 +70,7 @@ class Predictor(BasePredictor):
             description="Input image. This specifies the input portrait. The resolution should be larger than 256x256 and will be cropped to 256x256."
         ),
         audio: Path = Input(
-            description="Input audio file. The input audio file extensions should be wav, mp3, m4a, and mp4 (video with sound) should all be compatible."
+            description="Input audio file. The input audio file extensions should be wav, mp3, m4a, ogg, flv, raw. most of common audio format (supported by pydub) would be compatible."
         ),
         style_clip: str = Input(
             description="Input style_clip_mat, optional. This specifies the reference speaking style.",
@@ -94,40 +99,27 @@ class Predictor(BasePredictor):
         ),
     ) -> Path:
         """Run a single prediction on the model"""
-        # self.cfg = get_cfg_defaults()
-        # cache_dir = "checkpoints"
-        # local_files_only = True  # set to True if model is cached locally
-        # self.device = torch.device("cuda:0")
-        # # get wav2vec feat from audio
-        # self.wav2vec_processor = Wav2Vec2Processor.from_pretrained(
-        #     "jonatasgrosman/wav2vec2-large-xlsr-53-english",
-        #     cache_dir=cache_dir,
-        #     local_files_only=local_files_only,
-        # )
-        # self.wav2vec_model = (
-        #     Wav2Vec2Model.from_pretrained(
-        #         "jonatasgrosman/wav2vec2-large-xlsr-53-english",
-        #         cache_dir=cache_dir,
-        #         local_files_only=local_files_only,
-        #     )
-        #     .eval()
-        #     .to(self.device)
-        # )
-        # # get renderer
-        # self.renderer = get_netG("checkpoints/renderer.pt", self.device)
-
-        tmp_dir = "cog_temp"
-        if os.path.exists(tmp_dir):
-            shutil.rmtree(tmp_dir)
-        os.makedirs(tmp_dir)
+        # tmp_dir = "cog_temp"
+        # if os.path.exists(tmp_dir):
+        #     shutil.rmtree(tmp_dir)
+        # os.makedirs(tmp_dir)
+        
+        # Create a temporary directory that will last throughout the function
+        tmp_dir = tempfile.TemporaryDirectory()
+        temp_path = ""
 
         # get audio in 16000Hz
-        wav_16k_path = os.path.join(tmp_dir, "tmp_input_16K.wav")
-        command = f"ffmpeg -y -i {str(audio)} -async 1 -ac 1 -vn -acodec pcm_s16le -ar 16000 {wav_16k_path}"
-        subprocess.run(command.split())
+        audio_data = AudioSegment.from_file(audio)
+        audio_data = audio_data.set_frame_rate(16000).set_channels(1)
+        audio_data = np.array(audio_data.get_array_of_samples())
 
-        speech_array, sampling_rate = torchaudio.load(wav_16k_path)
-        audio_data = speech_array.squeeze().numpy()
+        # # get audio in 16000Hz
+        # wav_16k_path = os.path.join(tmp_dir, "tmp_input_16K.wav")
+        # command = f"ffmpeg -y -i {str(audio)} -async 1 -ac 1 -vn -acodec pcm_s16le -ar 16000 {wav_16k_path}"
+        # subprocess.run(command.split())
+
+        # speech_array, sampling_rate = torchaudio.load(wav_16k_path)
+        # audio_data = speech_array.squeeze().numpy()
         inputs = self.wav2vec_processor(
             audio_data, sampling_rate=16_000, return_tensors="pt", padding=True
         )
@@ -137,15 +129,23 @@ class Predictor(BasePredictor):
                 inputs.input_values.to(self.device), return_dict=False
             )[0]
 
-        audio_feat_path = os.path.join(tmp_dir, "tmp_wav2vec.npy")
-        np.save(audio_feat_path, audio_embedding[0].cpu().numpy())
+        # audio_feat_path = os.path.join(tmp_dir, "tmp_wav2vec.npy")
+        # np.save(audio_feat_path, audio_embedding[0].cpu().numpy())
 
         # get src image
-        src_img_path = os.path.join(tmp_dir, "src_img.png")
+        # src_img_path = os.path.join(tmp_dir, "src_img.png")
+        # if crop_image:
+        #     crop_src_image(str(image), src_img_path, 0.4)
+        # else:
+        #     shutil.copy(str(image), src_img_path)
         if crop_image:
-            crop_src_image(str(image), src_img_path, 0.4)
+            src_img = crop_src_image(str(image), 0.4)
         else:
-            shutil.copy(str(image), src_img_path)
+            # validate image size is 256x256, 3 channels jpg or 4 channels png.
+            src_img = cv2.imread(str(image))
+            assert src_img.shape[:2] == (256, 256), "Image size should be 256x256."
+            assert src_img.shape[2] in [3, 4], "Image should have 3 or 4 channels."
+        src_img = cv2.cvtColor(src_img, cv2.COLOR_BGR2RGB)
 
         with torch.no_grad():
             # get diff model and load checkpoint
@@ -153,40 +153,65 @@ class Predictor(BasePredictor):
             # diff_net = get_diff_net(self.cfg, self.device).to(self.device)
 
             # generate face motion
-            face_motion_path = os.path.join(tmp_dir, "facemotion.npy")
-            inference_one_video(
-                self.cfg,
-                audio_feat_path,
-                str(style_clip),
-                str(pose),
-                face_motion_path,
-                self.diff_net,
-                self.device,
+            # face_motion_path = os.path.join(tmp_dir, "facemotion.npy")
+            # inference_one_video(
+            #     self.cfg,
+            #     audio_feat_path,
+            #     str(style_clip),
+            #     str(pose),
+            #     face_motion_path,
+            #     self.diff_net,
+            #     self.device,
+            #     max_audio_len=max_gen_len,
+            #     ddim_num_step=num_inference_steps,
+            # )
+            face_motion = inference_one_video(
+                cfg=self.cfg,
+                audio_raw=audio_embedding[0].cpu().numpy(),
+                style_clip_path=str(style_clip),
+                pose_path=str(pose),
+                diff_net=self.diff_net,
+                device=self.device,
                 max_audio_len=max_gen_len,
                 ddim_num_step=num_inference_steps,
             )
 
             # render video
-            no_watermark_video_path = os.path.join(tmp_dir, "no_watermark.mp4")
+            # no_watermark_video_path = os.path.join(tmp_dir, "no_watermark.mp4")
 
-            render_video(
-                self.renderer,
-                src_img_path,
-                face_motion_path,
-                wav_16k_path,
-                no_watermark_video_path,
-                self.device,
-                fps=25,
-                no_move=False,
-            )
+            # render_video(
+            #     self.renderer,
+            #     src_img_path,
+            #     face_motion_path,
+            #     wav_16k_path,
+            #     no_watermark_video_path,
+            #     self.device,
+            #     fps=25,
+            #     no_move=False,
+            # )
 
-            '''# add watermark
-            output_video_path = "tmp/out.mp4"
-            os.system(
-                f'ffmpeg -y -i {no_watermark_video_path} -vf  "movie=media/watermark.png,scale= 120: 36[watermask]; [in] [watermask] overlay=140:220 [out]" {output_video_path}'
-            )'''
+            # Render and save output video to a temporary file
+            # This file will automatically be deleted by Cog after it has been returned.
+            with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as temp_file:
+                cv2.imwrite(temp_file.name, no_watermark_video)
+                temp_path = temp_file.name
+                no_watermark_video = render_video(
+                    net_G=self.renderer,
+                    src_img=src_img,
+                    target_exp_seq=face_motion,
+                    output_path=temp_path,
+                    wav_path=str(audio),
+                    silent=False,
+                    device=self.device,
+                    fps=25,
+                    no_move=False,
+                )
+                print(f"rendered video file is saved to temp_path: {temp_path}\n")
 
-        return Path(no_watermark_video_path)
+        # At the end of the function, cleanup the temporary directory and files
+        tmp_dir.cleanup()
+
+        return Path(temp_path)
 
 
 @torch.no_grad()
@@ -201,6 +226,7 @@ def get_diff_net(cfg, device):
             mode=cfg.DIFFUSION.SCHEDULE.MODE,
         ),
     )
+    # inference checkpoint is located at checkpoints/denoising_network.pth
     checkpoint = torch.load(cfg.INFERENCE.CHECKPOINT, map_location=device)
     model_state_dict = checkpoint["model_state_dict"]
     diff_net_dict = {
@@ -215,17 +241,18 @@ def get_diff_net(cfg, device):
 @torch.no_grad()
 def inference_one_video(
     cfg,
-    audio_path,
+    # audio_path,
+    audio_raw,
     style_clip_path,
     pose_path,
-    output_path,
+    # output_path,
     diff_net,
     device,
     max_audio_len=None,
     sample_method="ddim",
     ddim_num_step=10,
 ):
-    audio_raw = np.load(audio_path)
+    # audio_raw = np.load(audio_path)
 
     if max_audio_len is not None:
         audio_raw = audio_raw[: max_audio_len * 50]
@@ -273,5 +300,6 @@ def inference_one_video(
         selected_pose[: len(pose)] = pose
 
     gen_exp_pose = np.concatenate((gen_exp, selected_pose), axis=1)
-    np.save(output_path, gen_exp_pose)
-    return output_path
+    return gen_exp_pose
+    # np.save(output_path, gen_exp_pose)
+    # return output_path

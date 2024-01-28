@@ -38,10 +38,12 @@ def get_netG(checkpoint_path, device):
 @torch.no_grad()
 def render_video(
     net_G,
-    src_img_path,
-    exp_path,
+    # src_img_path,
+    # exp_path,
     wav_path,
     output_path,
+    src_img,
+    target_exp_seq,
     device,
     silent=False,
     semantic_radius=13,
@@ -52,7 +54,7 @@ def render_video(
     """
     exp: (N, 73)
     """
-    target_exp_seq = np.load(exp_path)
+    # target_exp_seq = np.load(exp_path)
     if target_exp_seq.shape[1] == 257:
         exp_coeff = target_exp_seq[:, 80:144]
         angle_trans_crop = np.array(
@@ -73,9 +75,10 @@ def render_video(
     else:
         raise NotImplementedError
 
-    frame = cv2.imread(src_img_path)
-    frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-    src_img_raw = Image.fromarray(frame)
+    # frame = cv2.imread(src_img_path)
+    # frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+    # src_img_raw = Image.fromarray(frame)
+    src_img_raw = Image.fromarray(src_img)
     image_transform = transforms.Compose(
         [
             transforms.ToTensor(),
@@ -109,8 +112,13 @@ def render_video(
         torchvision.io.write_video(output_path, transformed_imgs.cpu(), fps)
     else:
         silent_video_path = f"{output_path}-silent.mp4"
+        wav_16k_path = f"{output_path}-16k.wav"
+        command = f"ffmpeg -y -i {str(wav_path)} -async 1 -ac 1 -vn -acodec pcm_s16le -ar 16000 {wav_16k_path}"
+        os.system(command)
+        # subprocess.run(command.split())
         torchvision.io.write_video(silent_video_path, transformed_imgs.cpu(), fps)
         os.system(
             f"ffmpeg -loglevel quiet -y -i {silent_video_path} -i {wav_path} -shortest {output_path}"
         )
         os.remove(silent_video_path)
+        os.remove(wav_16k_path)

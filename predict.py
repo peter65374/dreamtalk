@@ -180,13 +180,13 @@ class Predictor(BasePredictor):
                 no_move=False,
             )
 
-            # add watermark
+            '''# add watermark
             output_video_path = "tmp/out.mp4"
             os.system(
                 f'ffmpeg -y -i {no_watermark_video_path} -vf  "movie=media/watermark.png,scale= 120: 36[watermask]; [in] [watermask] overlay=140:220 [out]" {output_video_path}'
-            )
+            )'''
 
-        return Path(output_video_path)
+        return Path(no_watermark_video_path)
 
 
 @torch.no_grad()
